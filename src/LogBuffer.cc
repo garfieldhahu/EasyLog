@@ -12,6 +12,12 @@ LogBuffer::LogBuffer(LogBuffer* pre, LogBuffer* next, int size)
     buff_ = new char[size_];
 }
 
+LogBuffer::LogBuffer(int size)
+    :pre_(NULL), next_(NULL), size_(size)
+{
+    buff_ = new char[size_];
+}
+
 LogBuffer::LogBuffer()
     :pre_(NULL), next_(NULL), size_(kBufferLen)
 {

@@ -29,28 +29,49 @@ public:
         log_level_ = log_level;
     }
 
-    staitc LogLevel get_log_level() const
+    static LogLevel get_log_level() const
     {
         return log_level_;
     }
 
     void Log(const char* file, const char* function, int line, const char* fmt, ...);
+    void start();
 
 private:
     EasyLog();
-    void format_head();
+    void init();
+    void init_log_file(const char* log_path, const char* log_name);
+    void dump_background();//开启后台线程，异步dump日志
+    void roll_log();
+    void open_file()
+    {
+        strncat(log_full_name_, log_path_, sizeof(log_full_name_));
+        strncat(log_full_name_, "/", sizeof(log_full_name_));
+        strncat(log_full_name_, log_name_, sizeof(log_full_name_));
+        log_fd_ = open(log_full_name_, O_CREAT | O_APPEND | O_RDWR, 0640);
+    }
+    void roll_log(struct tm* s_tm)
+    {
+        close(log_fd_);
+        log_roll_hour_ = s_tm.tm_hour;
+        sprintf(log_name_+3, "%d%d%d%d", s_tm.tm_year + 1900, s_tm.tm_mon + 1, s_tm.tm_mday, s_tm.tm_hour);
+        open_file();
+    }
     void init_tid()     {tid_ = gettid();}
+
 
 private:
     int buf_num_;
+    int buf_size_;
     LogBuffer* head_;
     LogBuffer* tail_;
-    char log_path_[512];
-    char log_name_[128];
+    char log_full_name_[kLogPathLenMax];
+    char log_path_[kLogPathLenMax];
+    char log_name_[kLogNameLenMax];
     char str_[kMessageMsgLenMax];
+    int log_fd_;
+    int log_roll_hour_;
     time_t last_second_;
-    struct timeval tv_;
-    struct tm tm_;
 
     static LogLevel log_level_;
     static pthread_mutex_t mutex_;

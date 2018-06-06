@@ -43,7 +43,10 @@ const int kUtimeLen = 6;
 
 const int kMessageMsgLenMax = 4* 1024;
 const int kMessageBodyLenMax = 4 * 1024 - 31; // kMessageMsgLenMax - kHeadLen;
-const int kBufferLen = 4* 1024 * 1024;
+const int kBufferLen = 4 * 1024 * 1024;
+
+const int kLogPathLenMax = 512;
+const int kLogNameLenMax = 128;
 
 
 
