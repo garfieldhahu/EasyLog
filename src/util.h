@@ -24,6 +24,12 @@ enum LogLevel
 };
 
 
+enum BufferStat
+{
+    EMPTY,
+    FULL,
+};
+
 const char* LevelMap[LOG_LEVEL_NUM] = 
 {
     "TRACE ",

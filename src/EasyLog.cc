@@ -24,7 +24,6 @@ EasyLog::EasyLog(const char* log_path, const char* log_name, LogLevel log_level,
         fprintf(stderr, "no space to allocate LogBuffer\n");
         exit(1);
     }
-    head_->set_log_ins(this);
     LogBuffer* cur;
     LogBuffer* pre = head_;
     for(int i = 1; i < buf_num_; ++i)
@@ -35,7 +34,6 @@ EasyLog::EasyLog(const char* log_path, const char* log_name, LogLevel log_level,
             fprintf(stderr, "no space to allocate LogBuffer\n");
             exit(1);
         }
-        cur->set_log_ins(this);
         cur->set_pre(pre);
         pre->set_next(cur);
         pre = cur;
@@ -117,15 +115,22 @@ void EasyLog::Log(const char* file, const char* function, int line, const char* 
     int log_len = base_len + body_len;
     bool raise_signal = false;
     pthread_mutex_lock(&mutex_);
+    //head_ may not have enough space
     if(unlikely(log_len > head_->avail_size())
     {
-        //todo: head_ may not have enough space
-        //...
+        raise_signal = true;
+        head_->set_buffer_stat(FULL);
+        if(unlikely(head_->get_next() == tail_))
+        {
+            LogBuffer* tmp = new LogBuffer(head_, tail_, buff_size_);
+            head_ = tmp;
+        }
+        else
+        {
+            head_ = head_->get_next();
+        }
     }
-    else
-    {
-        head_->append(log_format_buffer, body_len + remain_len);
-    }
+    head_->append(log_format_buffer, body_len + remain_len);
     pthread_mutex_unlock(&mutex_);
     if(raise_signal)
         pthread_cond_signal(&cond_);
