@@ -2,16 +2,15 @@
 #define EASYLOG_LOGBUFFER_H
 
 #include <unistd.h>
+#include "Util.h"
 
 namespace easylog
 {
 
-class EasyLog;
 
 class LogBuffer
 {
 public:
-    // friend class EasyLog;
     int avail_size()                        {return size_ - used_len_;}
     char* current_pos()                     {return &buff_[used_len_];}
     bool is_empty()                         {return used_len_ == 0;}
@@ -19,10 +18,10 @@ public:
     void set_pre(LogBuffer* pre)            {pre_ = pre;}
     LogBuffer* get_next()                   {return next_;}
     void set_next(LogBuffer* next)          {next_ = next;}
-    BufferStat get_buffer_stat()            {return buff_stat_;}
+    BufferStat get_buffer_stat()            {return buffer_stat_;}
     void set_buffer_stat(BufferStat stat)   {buffer_stat_ = stat;}
     void dump(int fd)                       {::write(fd, buff_, used_len_);}
-    void clear()                            {buffer_stat_ = EMPTY;used_len_ = 0;}
+    void clear()                            {buffer_stat_ = FREE;used_len_ = 0;}
     void append(const char* str, int len)
     {
         memcpy(buff_ + used_len_, str, len);
@@ -31,7 +30,7 @@ public:
     }
 
     LogBuffer(LogBuffer* pre, LogBuffer* next, int size);
-    LogBuffer::LogBuffer(int size);
+    LogBuffer(int size);
     LogBuffer();
     
 private:
