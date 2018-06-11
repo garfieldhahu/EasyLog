@@ -16,6 +16,8 @@ pthread_cond_t EasyLog::cond_ = PTHREAD_COND_INITIALIZER;
 EasyLog* EasyLog::ins_ = NULL;
 pthread_once_t EasyLog::once_ = PTHREAD_ONCE_INIT;
 __thread pid_t EasyLog::tid_ = 0;
+__thread char* EasyLog::str_ = NULL;
+__thread time_t EasyLog::last_second_ = 0;
 //char EasyLog::log_path_[kLogPathLenMax] = "/tmp/EasyLog";
 //char EasyLog::log_name_[kLogNameLenMax];
 char EasyLog::log_path_[512] = "/tmp/EasyLog";
@@ -95,38 +97,25 @@ void EasyLog::dump_background()
             abstime.tv_sec += kDumpLoopMaxTime;
             pthread_cond_timedwait(&cond_, &mutex_, &abstime);
         }
-        //else
-        //{
-        //    if(tail_->get_buffer_stat() == FREE)
-        //    {
-        //        assert(tail_ == head_);
-        //        head_ = head_->get_next();
-        //    }
-        //    //pthread_mutex_unlock(&mutex_);
-        //    tail_->dump(log_fd_);
-        //    //pthread_mutex_lock(&mutex_);
-        //    tail_->clear();
-        //    tail_ = tail_->get_next();
-        //    pthread_mutex_unlock(&mutex_);
-        //}
 
-            if(tail_->get_buffer_stat() == FREE)
-            {
-                //assert(tail_ == head_);
-                head_ = head_->get_next();
-            }
-            pthread_mutex_unlock(&mutex_);
-            tail_->dump(log_fd_);
-            pthread_mutex_lock(&mutex_);
-            tail_->clear();
-            tail_ = tail_->get_next();
-            pthread_mutex_unlock(&mutex_);
+        if(tail_->get_buffer_stat() == FREE)
+        {
+            //assert(tail_ == head_);
+            head_ = head_->get_next();
+        }
+        //pthread_mutex_unlock(&mutex_);
+        tail_->dump(log_fd_);
+        //pthread_mutex_lock(&mutex_);
+        tail_->clear();
+        tail_ = tail_->get_next();
+        pthread_mutex_unlock(&mutex_);
 
     }   
 }
 
 void EasyLog::stop()
 {
+    LOG_WARN("EasyLog dump all buffers, current buffer num:%d, total size:%ldMB\n", buf_num_, kBufferLen/1024/1024*buf_num_);
     running_ = false;
     pthread_mutex_lock(&mutex_);
     while(!tail_->is_empty())
@@ -159,53 +148,55 @@ void EasyLog::init_log_file()
         buf[len] = '\0';
         char* index = strrchr(buf, '/');
         if(unlikely(NULL == index))
-            sprintf(log_name_, "log%04d%02d%02d%02d%s.txt", s_tm.tm_year + 1900, s_tm.tm_mon + 1, s_tm.tm_mday, s_tm.tm_hour, buf);
+            sprintf(log_name_, "log%04d%02d%02d%02d-%s.txt", s_tm.tm_year + 1900, s_tm.tm_mon + 1, s_tm.tm_mday, s_tm.tm_hour, buf);
         else
-            sprintf(log_name_, "log%04d%02d%02d%02d%s.txt", s_tm.tm_year + 1900, s_tm.tm_mon + 1, s_tm.tm_mday, s_tm.tm_hour, index + 1);
+            sprintf(log_name_, "log%04d%02d%02d%02d-%s.txt", s_tm.tm_year + 1900, s_tm.tm_mon + 1, s_tm.tm_mday, s_tm.tm_hour, index + 1);
     }
     else
     {
         strncpy(buf, log_name_, kLogNameLenMax);
-        sprintf(log_name_, "log%04d%02d%02d%02d%s.txt", s_tm.tm_year + 1900, s_tm.tm_mon + 1, s_tm.tm_mday, s_tm.tm_hour, buf);
+        sprintf(log_name_, "log%04d%02d%02d%02d-%s.txt", s_tm.tm_year + 1900, s_tm.tm_mon + 1, s_tm.tm_mday, s_tm.tm_hour, buf);
     }
     open_file();
 }
 
 
-void EasyLog::log(const char* file, const char* function, int line, const char* fmt, ...)
+void EasyLog::log(LogLevel level,const char* file, const char* function, int line, const char* fmt, ...)
 {
     if(unlikely(0 == get_tid()))
         init_tid();
-    char log_format_buffer[kMessageMsgLenMax];
-    strncpy(log_format_buffer, LevelMap[log_level_], 6);
+    if(unlikely(NULL == str_))
+        str_ = new char[kMessageMsgLenMax];
+    strncpy(str_, LevelMap[level], 6);
     struct timeval s_tv;
     gettimeofday(&s_tv, NULL);
     time_t second = s_tv.tv_sec;
     int usecond = s_tv.tv_usec;
     struct tm s_tm;
-    //if(likely(second == last_second_))
-    //{
-    //    snprintf(log_format_buffer + 24, kUtimeLen, "%6d", usecond);
-    //}
-    //else
-    //{
+    if(likely(second == last_second_))
+    {
+        sprintf(str_ + 24, "%06d", usecond);
+        //snprintf(str_ + 24, 6, "%06d", usecond);
+    }
+    else
+    {
         last_second_ = second;
         localtime_r(&last_second_, &s_tm);
-        snprintf(log_format_buffer + 6, kTimeLen, kTimeFormat, s_tm.tm_year + 1900, s_tm.tm_mon + 1, s_tm.tm_mday, s_tm.tm_hour, s_tm.tm_min, s_tm.tm_sec, usecond);
+        snprintf(str_ + 6, kTimeLen, kTimeFormat, s_tm.tm_year + 1900, s_tm.tm_mon + 1, s_tm.tm_mday, s_tm.tm_hour, s_tm.tm_min, s_tm.tm_sec, usecond);
         if(unlikely(s_tm.tm_hour != log_roll_hour_))
             roll_log(&s_tm);
-    //}
+    }
 
-    int pre_len = sprintf(log_format_buffer + kHeadLen, " %s:%s(%d) - ", file, function, line);
+    int pre_len = sprintf(str_ + kHeadLen, " %ld %s:%s(%d) - ", get_tid(), file, function, line);
     int base_len = kHeadLen + pre_len;
     int remain_len = kMessageMsgLenMax - base_len;
     va_list args;
     va_start(args, fmt);
-    int body_len = vsnprintf(log_format_buffer + kHeadLen + pre_len, remain_len, fmt, args);
+    int body_len = vsnprintf(str_ + kHeadLen + pre_len, remain_len, fmt, args);
     va_end(args);
-    //单条日志过长时截断
+    // truncate if the single log is too long
     if(remain_len == body_len)
-        log_format_buffer[kMessageMsgLenMax - 1] = '\n';
+        str_[kMessageMsgLenMax - 1] = '\n';
     int log_len = base_len + body_len;
     bool raise_signal = false;
     pthread_mutex_lock(&mutex_);
@@ -217,14 +208,16 @@ void EasyLog::log(const char* file, const char* function, int line, const char* 
         if(unlikely(head_->get_next() == tail_))
         {
             LogBuffer* tmp = new LogBuffer(head_, tail_, buf_size_);
+            ++buf_num_;
             head_ = tmp;
+            LOG_WARN("EasyLog new another buffer, current buffer num:%d, total size:%ldMB\n", buf_num_, kBufferLen/1024/1024*buf_num_);
         }
         else
         {
             head_ = head_->get_next();
         }
     }
-    head_->append(log_format_buffer, body_len + base_len);
+    head_->append(str_, body_len + base_len);
     pthread_mutex_unlock(&mutex_);
     if(raise_signal)
         pthread_cond_signal(&cond_);

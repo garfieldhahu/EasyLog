@@ -20,7 +20,6 @@ const char* LevelMap[LOG_LEVEL_NUM] =
 const int kHeadLen = 30;
 const char* kTimeFormat = "%04d%02d%02d %02d:%02d:%02d.%06d";
 const int kTimeLen = 25;
-const int kUtimeLen = 6;
 const int kMessageMsgLenMax = 4* 1024;
 const int kMessageBodyLenMax = 4 * 1024 - 31; // kMessageMsgLenMax - kHeadLen;
 const int kBufferNum = 3;

@@ -6,7 +6,7 @@ test : $(objects) test.cpp
 EasyLog.o : EasyLog.h EasyLog.cpp
 	g++ -g -c EasyLog.cpp
 LogBuffer.o : LogBuffer.h LogBuffer.cpp
-	g++ -g -c LogBffer.cpp
+	g++ -g -c LogBuffer.cpp
 Util.o : Util.h Util.cpp
 	g++ -g -c Util.cpp
 clean :

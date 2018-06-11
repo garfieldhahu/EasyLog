@@ -17,7 +17,7 @@ class EasyLog
 public:
     friend void dump_before_exit(int sig);
     void stop();
-    void log(const char* file, const char* function, int line, const char* fmt, ...);
+    void log(LogLevel level, const char* file, const char* function, int line, const char* fmt, ...);
 
     static EasyLog* Instance()
     {
@@ -43,10 +43,10 @@ private:
     void init();
     void start();
     void init_log_file();
-    void dump_background();//开启后台线程，异步dump日志
+    void dump_background();// start a background thread to dump logs asynchronously
     void roll_log();
 
-    EasyLog():running_(false),head_(NULL),tail_(NULL),last_second_(0),log_roll_hour_(25)
+    EasyLog():running_(false),head_(NULL),tail_(NULL),log_roll_hour_(25)
     {
     }
     void open_file()
@@ -74,13 +74,9 @@ private:
 private:
     LogBuffer* head_;
     LogBuffer* tail_;
-    //char log_full_name_[kLogPathLenMax];
-    //char str_[kMessageMsgLenMax];
     char log_full_name_[512];
-    char str_[4096];
     int log_fd_;
     int log_roll_hour_;
-    time_t last_second_;
     bool running_;
     pthread_t dump_thread_tid_;
 
@@ -96,24 +92,26 @@ private:
     static EasyLog* ins_;
     static pthread_once_t once_;
     static __thread pid_t tid_;
+    static __thread char* str_;
+    static __thread time_t last_second_;
 };
 
 
 #define LOG_TRACE(fmt, args...) \
     do \
     { \
-        if(easylog::EasyLog::Instance()->get_log_level() >= easylog::TRACE) \
+        if(easylog::EasyLog::Instance()->get_log_level() <= easylog::TRACE) \
             easylog::EasyLog::Instance()->log( \
-                                        __FILE__, __FUNCTION__, __LINE__, fmt, ##args); \
+                                        easylog::TRACE, __FILE__, __FUNCTION__, __LINE__, fmt, ##args); \
     } \
     while(0)
 
 #define LOG_DEBUG(fmt, args...) \
     do \
     { \
-        if(easylog::EasyLog::Instance()->get_log_level() >= easylog::DEBUG) \
+        if(easylog::EasyLog::Instance()->get_log_level() <= easylog::DEBUG) \
             easylog::EasyLog::Instance()->log( \
-                                        __FILE__, __FUNCTION__, __LINE__, fmt, ##args); \
+                                        easylog::DEBUG, __FILE__, __FUNCTION__, __LINE__, fmt, ##args); \
     } \
     while(0)
 
@@ -121,40 +119,40 @@ private:
 #define LOG_INFO(fmt, args...) \
     do \
     { \
-        if(easylog::EasyLog::Instance()->get_log_level() >= easylog::INFO) \
+        if(easylog::EasyLog::Instance()->get_log_level() <= easylog::INFO) \
             easylog::EasyLog::Instance()->log( \
-                                        __FILE__, __FUNCTION__, __LINE__, fmt, ##args); \
+                                        easylog::INFO, __FILE__, __FUNCTION__, __LINE__, fmt, ##args); \
     } \
     while(0)
 
 #define LOG_WARN(fmt, args...) \
     do \
     { \
-        if(easylog::EasyLog::Instance()->get_log_level() >= easylog::WARN) \
+        if(easylog::EasyLog::Instance()->get_log_level() <= easylog::WARN) \
             easylog::EasyLog::Instance()->log( \
-                                        __FILE__, __FUNCTION__, __LINE__, fmt, ##args); \
+                                        easylog::WARN, __FILE__, __FUNCTION__, __LINE__, fmt, ##args); \
     } \
     while(0)
 
 #define LOG_ERROR(fmt, args...) \
     do \
     { \
-        if(easylog::EasyLog::Instance()->get_log_level() >= easylog::ERROR) \
+        if(easylog::EasyLog::Instance()->get_log_level() <= easylog::ERROR) \
             easylog::EasyLog::Instance()->log( \
-                                        __FILE__, __FUNCTION__, __LINE__, fmt, ##args); \
+                                        easylog::ERROR, __FILE__, __FUNCTION__, __LINE__, fmt, ##args); \
     } \
     while(0)
 
 #define LOG_FATAL(fmt, args...) \
     do \
     { \
-        if(easylog::EasyLog::Instance()->get_log_level() >= easylog::FATAL) \
+        if(easylog::EasyLog::Instance()->get_log_level() <= easylog::FATAL) \
             easylog::EasyLog::Instance()->log( \
-                                        __FILE__, __FUNCTION__, __LINE__, fmt, ##args); \
+                                        easylog::FATAL, __FILE__, __FUNCTION__, __LINE__, fmt, ##args); \
     } \
     while(0)
 
-#define LOG_EXIT() \
+#define LOG_STOP() \
     do \
     { \
         easylog::EasyLog::Instance()->stop(); \
