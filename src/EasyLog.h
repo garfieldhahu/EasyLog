@@ -1,12 +1,14 @@
 #ifndef EASYLOG_EASYLOG_H
 #define EASYLOG_EASYLOG_H
 
+#include <errno.h>
 #include <pthread.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <stdlib.h>
 #include <sys/syscall.h>
-#include "LogBuffer.h"
 #include "Util.h"
+#include "LogBuffer.h"
 
 namespace easylog
 {
@@ -15,7 +17,6 @@ namespace easylog
 class EasyLog
 {
 public:
-    friend void dump_before_exit(int sig);
     void stop();
     void log(LogLevel level, const char* file, const char* function, int line, const char* fmt, ...);
 
@@ -43,47 +44,41 @@ private:
     void init();
     void start();
     void init_log_file();
-    void dump_background();// start a background thread to dump logs asynchronously
     void roll_log();
+    void open_file();
+    void dump_tail();
+    void dump_all();
+    void dump_background();// start a background thread to dump logs asynchronously
+    void dump_before_exit();
 
     EasyLog():running_(false),head_(NULL),tail_(NULL),log_roll_hour_(25)
     {
-    }
-    void open_file()
-    {
-        strncat(log_full_name_, log_path_, sizeof(log_full_name_));
-        strncat(log_full_name_, "/", sizeof(log_full_name_));
-        strncat(log_full_name_, log_name_, sizeof(log_full_name_));
-        log_fd_ = open(log_full_name_, O_CREAT | O_APPEND | O_RDWR, 0640);
-    }
-    void roll_log(struct tm* s_tm)
-    {
-        close(log_fd_);
-        log_roll_hour_ = s_tm->tm_hour;
-        sprintf(log_name_+3, "%04d%02d%02d%02d", s_tm->tm_year + 1900, s_tm->tm_mon + 1, s_tm->tm_mday, s_tm->tm_hour);
-        open_file();
     }
     void init_tid()         {tid_ = gettid();}
     int get_tid() const     {return tid_;}
     static void* background_function(void* arg)
     {
-       EasyLog::Instance()->dump_background(); 
+        EasyLog::Instance()->dump_background(); 
+    }
+    static void signal_exit(int sig)
+    {
+        EasyLog::Instance()->dump_before_exit();
     }
 
 
 private:
     LogBuffer* head_;
     LogBuffer* tail_;
-    char log_full_name_[512];
-    int log_fd_;
-    int log_roll_hour_;
     bool running_;
     pthread_t dump_thread_tid_;
+    int log_fd_;
+    int log_roll_hour_;
 
     //static char log_path_[kLogPathLenMax];
     //static char log_name_[kLogNameLenMax];
     static char log_path_[512];
     static char log_name_[128];
+    static char log_full_name_[512];
     static int buf_num_;
     static int buf_size_;
     static LogLevel log_level_;

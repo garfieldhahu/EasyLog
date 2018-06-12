@@ -1,13 +1,13 @@
 #include "EasyLog.h"
 
-const int loop_num = 1000000;
+const int loop_num = 10000000;
 
 void* child1(void* arg)
 {
     for(int i = 0; i < loop_num; ++i)
     {
-        LOG_DEBUG("child1 loop %d\n", i);
-        LOG_INFO("in child1:%ld%s\n", 1357986, "abcdefghijklmn");
+        LOG_DEBUG("child1 loop %d, %s\n", i, "HELLO WORLD, may the force with you");
+        LOG_INFO("in child1:%ld, %s\n", 1357986, "abcdefghijklmn");
     }
 }
 
@@ -15,8 +15,8 @@ void* child2(void* arg)
 {
     for(int i = 0; i < loop_num; ++i)
     {
-        LOG_DEBUG("in child2:%s%d\n", "HELLO COLEWANG", 88888);
-        LOG_INFO("in child2:%ld%s\n", 2468097, "opqrstuvwxyz");
+        LOG_DEBUG("in child2:%s, %d\n", "HELLO COLEWANG", 88888);
+        LOG_INFO("in child2:%ld, %s\n", 2468097, "opqrstuvwxyz");
     }
 }
 

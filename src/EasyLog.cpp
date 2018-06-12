@@ -1,7 +1,5 @@
-#include <stdlib.h>
 #include <stdarg.h>
 #include <signal.h>
-#include <errno.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/time.h> 
@@ -22,21 +20,10 @@ __thread time_t EasyLog::last_second_ = 0;
 //char EasyLog::log_name_[kLogNameLenMax];
 char EasyLog::log_path_[512] = "/tmp/EasyLog";
 char EasyLog::log_name_[128];
+char EasyLog::log_full_name_[512];
 int EasyLog::buf_num_ = kBufferNum;
 int EasyLog::buf_size_ = kBufferLen;
 
-void dump_before_exit(int sig)
-{
-    
-    pthread_mutex_lock(&(EasyLog::Instance()->mutex_));
-    while(!EasyLog::Instance()->tail_->is_empty())
-    {
-        EasyLog::Instance()->tail_->dump(EasyLog::Instance()->log_fd_);
-        EasyLog::Instance()->tail_ = EasyLog::Instance()->tail_->get_next();
-    }
-    pthread_mutex_unlock(&(EasyLog::Instance()->mutex_));
-    exit(1);
-}
 
 void EasyLog::init()
 {
@@ -64,7 +51,7 @@ void EasyLog::init()
     head_->set_pre(pre);
     tail_ = head_;
     init_log_file();
-    if(signal(SIGSEGV, dump_before_exit))
+    if(signal(SIGSEGV, signal_exit))
     {
         fprintf(stderr, "redirect SIGSEGV signal failed\n");
         exit(1);
@@ -87,7 +74,7 @@ void EasyLog::dump_background()
     while(running_)
     {
         pthread_mutex_lock(&mutex_);
-        if(tail_->is_empty())
+        if(tail_->is_empty(THIS_HOUR) && tail_->is_empty(NEXT_HOUR))
         {
             struct timespec abstime;
             struct timeval now;
@@ -104,7 +91,12 @@ void EasyLog::dump_background()
             head_ = head_->get_next();
         }
         //pthread_mutex_unlock(&mutex_);
-        tail_->dump(log_fd_);
+        tail_->dump(log_fd_, THIS_HOUR);
+        if(unlikely(!tail_->is_empty(NEXT_HOUR)))
+        {
+            roll_log();
+            tail_->dump(log_fd_, NEXT_HOUR);
+        }
         //pthread_mutex_lock(&mutex_);
         tail_->clear();
         tail_ = tail_->get_next();
@@ -115,17 +107,59 @@ void EasyLog::dump_background()
 
 void EasyLog::stop()
 {
-    LOG_WARN("EasyLog dump all buffers, current buffer num:%d, total size:%ldMB\n", buf_num_, kBufferLen/1024/1024*buf_num_);
     running_ = false;
     pthread_mutex_lock(&mutex_);
-    while(!tail_->is_empty())
-    {
-        tail_->dump(log_fd_);
-        tail_ = tail_->get_next();
-    }
+    dump_all();
     pthread_mutex_unlock(&mutex_);
     pthread_join(dump_thread_tid_, NULL);
 }
+
+void EasyLog::roll_log()
+{
+    struct timeval s_tv;
+    gettimeofday(&s_tv, NULL);
+    time_t second = s_tv.tv_sec;
+    struct tm s_tm;
+    localtime_r(&second, &s_tm);
+    log_roll_hour_ = s_tm.tm_hour;
+    char file_time[10];
+    sprintf(file_time, "%04d%02d%02d%02d", s_tm.tm_year + 1900, s_tm.tm_mon + 1, s_tm.tm_mday, s_tm.tm_hour);
+    memcpy(log_name_ + 3, file_time, 10);
+    close(log_fd_);
+    open_file();
+}
+
+void EasyLog::dump_tail()
+{
+    tail_->dump(log_fd_, THIS_HOUR);
+    if(unlikely(!tail_->is_empty(NEXT_HOUR)))
+    {
+        roll_log();
+        tail_->dump(log_fd_, NEXT_HOUR);
+        tail_ = tail_->get_next();
+    }
+}
+
+void EasyLog::dump_all()
+{
+    while(tail_ != head_)
+        dump_tail();
+}
+
+void EasyLog::open_file()
+{
+    memset(log_full_name_, '\0', 512);
+    strncat(log_full_name_, log_path_, sizeof(log_full_name_));
+    strncat(log_full_name_, "/", sizeof(log_full_name_));
+    strncat(log_full_name_, log_name_, sizeof(log_full_name_));
+    log_fd_ = open(log_full_name_, O_CREAT | O_APPEND | O_RDWR, 0640);
+    if(-1 == log_fd_)
+    {
+        fprintf(stderr, "EasyLog open fail, file name: %s, error: %s\n", log_full_name_, strerror(errno));
+        exit(1);
+    }
+}
+
 
 void EasyLog::init_log_file()
 {
@@ -161,6 +195,12 @@ void EasyLog::init_log_file()
 }
 
 
+void EasyLog::dump_before_exit()
+{
+    LOG_FATAL("program got SIGSEGV, will exit after log dump\n");
+    stop();
+    exit(1);
+}
 void EasyLog::log(LogLevel level,const char* file, const char* function, int line, const char* fmt, ...)
 {
     if(unlikely(0 == get_tid()))
@@ -176,15 +216,12 @@ void EasyLog::log(LogLevel level,const char* file, const char* function, int lin
     if(likely(second == last_second_))
     {
         sprintf(str_ + 24, "%06d", usecond);
-        //snprintf(str_ + 24, 6, "%06d", usecond);
     }
     else
     {
         last_second_ = second;
         localtime_r(&last_second_, &s_tm);
         snprintf(str_ + 6, kTimeLen, kTimeFormat, s_tm.tm_year + 1900, s_tm.tm_mon + 1, s_tm.tm_mday, s_tm.tm_hour, s_tm.tm_min, s_tm.tm_sec, usecond);
-        if(unlikely(s_tm.tm_hour != log_roll_hour_))
-            roll_log(&s_tm);
     }
 
     int pre_len = sprintf(str_ + kHeadLen, " %ld %s:%s(%d) - ", get_tid(), file, function, line);
@@ -199,9 +236,13 @@ void EasyLog::log(LogLevel level,const char* file, const char* function, int lin
         str_[kMessageMsgLenMax - 1] = '\n';
     int log_len = base_len + body_len;
     bool raise_signal = false;
+    int  buf_index = THIS_HOUR;
     pthread_mutex_lock(&mutex_);
+    //if it comes into another hour ,roll the log
+    if(unlikely(s_tm.tm_hour != log_roll_hour_))
+        buf_index = NEXT_HOUR;
     //head_ may not have enough space
-    if(unlikely(log_len > head_->avail_size()))
+    if(unlikely(log_len > head_->avail_size(buf_index)))
     {
         raise_signal = true;
         head_->set_buffer_stat(FULL);
@@ -210,14 +251,14 @@ void EasyLog::log(LogLevel level,const char* file, const char* function, int lin
             LogBuffer* tmp = new LogBuffer(head_, tail_, buf_size_);
             ++buf_num_;
             head_ = tmp;
-            LOG_WARN("EasyLog new another buffer, current buffer num:%d, total size:%ldMB\n", buf_num_, kBufferLen/1024/1024*buf_num_);
+            LOG_WARN("EasyLog new another buffer, current buffer num:%d, total size:%ldMB\n", buf_num_, (kBufferLen >> 20) * buf_num_ * BUFFER_INDEX_NUM);
         }
         else
         {
             head_ = head_->get_next();
         }
     }
-    head_->append(str_, body_len + base_len);
+    head_->append(str_, body_len + base_len, buf_index);
     pthread_mutex_unlock(&mutex_);
     if(raise_signal)
         pthread_cond_signal(&cond_);

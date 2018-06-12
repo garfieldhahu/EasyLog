@@ -31,6 +31,13 @@ enum BufferStat
     FULL,
 };
 
+enum BufferIndex
+{
+    THIS_HOUR,
+    NEXT_HOUR,
+    BUFFER_INDEX_NUM,
+};
+
 extern const char* LevelMap[LOG_LEVEL_NUM]; 
 extern const int kHeadLen;
 extern const char* kTimeFormat;
@@ -42,8 +49,6 @@ extern const int kBufferLen;
 extern const int kLogPathLenMax;
 extern const int kLogNameLenMax;
 extern const int kDumpLoopMaxTime;
-
-
 
 
 } //namespace easylog
