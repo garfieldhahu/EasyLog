@@ -1,13 +1,25 @@
+CPP = g++
+CPPFLAGS = -g
+LDFLAGS = 
+#ARLIB = ar -t $^
+COMPILEBIN = $(CPP) -o $@ $^ $(LDFLAGS)
 
-objects = Util.o LogBuffer.o EasyLog.o
+CPPFLAGS += -I ~/project/RecSys/thirdparty/protobuf-3.5.0/include
+LDFLAGS += -L ~/project/RecSys/thirdparty/protobuf-3.5.0/lib64_release/ -lprotobuf
 
-test : $(objects) test.cpp
-	g++ -g -o test test.cpp  -lpthread $(objects) 
-EasyLog.o : EasyLog.h EasyLog.cpp
-	g++ -g -c EasyLog.cpp
-LogBuffer.o : LogBuffer.h LogBuffer.cpp
-	g++ -g -c LogBuffer.cpp
-Util.o : Util.h Util.cpp
-	g++ -g -c Util.cpp
+%.pb.cc : %.proto
+	~/project/RecSys/thirdparty/protobuf-3.5.0/bin/protoc --cpp_out=. $<
+
+%.d : %.cc
+	$(CPP) -MM %.cc
+
+%.o : %.cc %.d
+	$(CPP) $(CPPFLAGS) -o $@ -c $<
+
+test : Person.pb.o test.o
+	$(COMPILEBIN)
+
+all : Person.pb.cc
+
 clean :
-	rm test $(objects)
+	rm *.o test
